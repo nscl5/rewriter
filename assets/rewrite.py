@@ -11,14 +11,14 @@ def get_flag_emoji(country_code):
     return "".join(chr(0x1F1E6 + ord(char) - ord('A')) for char in country_code)
 
 def rename_ss_configs(config_list):
-
     renamed_list = []
     
     for index, link in enumerate(config_list, 1):
         link = link.strip()
         if not link:
             continue
-
+        
+        # Regex finds host:port, works with or without a '#' anchor
         match = re.search(r'@(.+?):(\d+)', link)
         
         if not match:
@@ -29,25 +29,35 @@ def rename_ss_configs(config_list):
         base_link = link.split('#')[0]
         
         try:
-            api_url = f'https://ipapi.co/{host}/country_code/'
+            api_url = f'http://ipwho.is/{host}'
+            
             response = requests.get(api_url, timeout=10)
             response.raise_for_status()
             
-            country_code = response.text.strip()
+            data = response.json()
+            country_code = "XX" # Default
             
-            if len(country_code) != 2 or not country_code.isalpha():
-                print(f"Got invalid country code for {host}: {country_code}", file=sys.stderr)
-                country_code = "XX" 
+            # Check if API request was successful
+            if data.get('success'):
+                country_code = data.get('country_code', 'XX')
+            else:
+                api_message = data.get('message', 'Unknown API error')
+                print(f"API Error for {host}: {api_message}", file=sys.stderr)
 
         except requests.RequestException as e:
-
-            print(f"API Error for host {host}: {e}", file=sys.stderr)
+            print(f"HTTP Error for host {host}: {e}", file=sys.stderr)
+            country_code = "XX"
+        except json.JSONDecodeError:
+            print(f"Failed to parse JSON response for host {host}", file=sys.stderr)
             country_code = "XX"
         
         flag = get_flag_emoji(country_code)
-        new_name = f"{flag} {country_code}_ROSE_{index:02d}"
+        new_name = f"{flag} {country_code} - {index:02d}"
         renamed_list.append(f"{base_link}#{new_name}")
-        time.sleep(2.5) 
+
+        # --- Rate Limit Change ---
+        # Reduced sleep time, as this API is much more generous
+        time.sleep(0.5) 
 
     return renamed_list
 
