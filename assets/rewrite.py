@@ -5,7 +5,6 @@ import sys
 import time
 
 def get_flag_emoji(country_code):
-
     if not country_code or len(country_code) != 2:
         return "❓"
     country_code = country_code.upper()
@@ -20,9 +19,10 @@ def rename_ss_configs(config_list):
         if not link:
             continue
 
-        match = re.search(r'@(.+?):(\d+)#', link)
+        match = re.search(r'@(.+?):(\d+)', link)
+        
         if not match:
-            print(f"Skipping invalid link: {link}", file=sys.stderr)
+            print(f"Skipping invalid link (Regex failed): {link}", file=sys.stderr)
             continue
             
         host = match.group(1).strip('[]')
@@ -30,26 +30,24 @@ def rename_ss_configs(config_list):
         
         try:
             api_url = f'https://ipapi.co/{host}/country_code/'
-            response = requests.get(api_url, timeout=5)
+            response = requests.get(api_url, timeout=10)
             response.raise_for_status()
             
             country_code = response.text.strip()
             
             if len(country_code) != 2 or not country_code.isalpha():
                 print(f"Got invalid country code for {host}: {country_code}", file=sys.stderr)
-                country_code = "XX"
+                country_code = "XX" 
 
         except requests.RequestException as e:
+
             print(f"API Error for host {host}: {e}", file=sys.stderr)
             country_code = "XX"
         
         flag = get_flag_emoji(country_code)
-        
         new_name = f"{flag} {country_code}_ROSE_{index:02d}"
-        
         renamed_list.append(f"{base_link}#{new_name}")
-
-        time.sleep(1) 
+        time.sleep(2.5) 
 
     return renamed_list
 
@@ -73,4 +71,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"An unexpected error occurred: {e}", file=sys.stderr)
         sys.exit(1)
-
