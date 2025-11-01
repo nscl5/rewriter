@@ -17,7 +17,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: |
@@ -25,10 +25,10 @@ jobs:
           pip install -r assets/requirements.txt
 
       - name: Run renaming script
-        run: python assets/rewrite.py > renamed_conf.txt
+        run: python assets/rewrite.py > renamed_configs.txt
 
       - name: Upload renamed configs
         uses: actions/upload-artifact@v4
         with:
-          name: renamed-conf
-          path: renamed_conf.txt
+          name: renamed-configs
+          path: renamed_configs.txt
