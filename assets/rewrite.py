@@ -6,7 +6,7 @@ import sys
 import socket
 from typing import List, Dict, Optional
 
-CLOUDFLARE_API_BASE = "https://app.nscl.ir"
+CLOUDFLARE_API_BASE = "https://ipp.nscl.ir"
 USE_FALLBACK_API = True
 MAX_CONCURRENT_REQUESTS = 20
 INPUT_FILE = "conf.txt"
