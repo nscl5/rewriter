@@ -1,12 +1,11 @@
 import asyncio
 import aiohttp
 import re
-import json
 import sys
 import socket
 from typing import List, Dict, Optional
 
-PRIMARY_API_BASE = "https://ipp.nscl.ir"
+PRIMARY_API_BASE = "https://who.victoriacross.ir/json"
 FALLBACK_API_BASE = "https://ipwho.is"
 MAX_CONCURRENT_REQUESTS = 20
 INPUT_FILE = "conf.txt"
@@ -15,8 +14,7 @@ INPUT_FILE = "conf.txt"
 def get_flag_emoji(country_code: str) -> str:
     if not country_code or len(country_code) != 2:
         return "❓"
-    country_code = country_code.upper()
-    return "".join(chr(0x1F1E6 + ord(c) - ord('A')) for c in country_code)
+    return "".join(chr(0x1F1E6 + ord(c) - ord('A')) for c in country_code.upper())
 
 
 def extract_host_and_base_link(link: str):
@@ -25,11 +23,9 @@ def extract_host_and_base_link(link: str):
         return None, None
     match = re.search(r'@(.+?):(\d+)', link)
     if not match:
-        print(f"Skipping invalid link (no match): {link}", file=sys.stderr)
+        print(f"Skipping invalid link: {link}", file=sys.stderr)
         return None, None
-    host = match.group(1).strip('[]')
-    base_link = link.split('#')[0]
-    return host, base_link
+    return match.group(1).strip('[]'), link.split('#')[0]
 
 
 async def resolve_host(host: str) -> Optional[str]:
@@ -41,37 +37,32 @@ async def resolve_host(host: str) -> Optional[str]:
         return None
 
 
-async def fetch_from_primary(
-    session: aiohttp.ClientSession,
-    ip: str,
-    host: str,
-) -> Optional[str]:
+async def fetch_from_primary(session: aiohttp.ClientSession, ip: str, host: str) -> Optional[str]:
     url = f"{PRIMARY_API_BASE}/{ip}"
     try:
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             resp.raise_for_status()
             data = await resp.json()
-        country = data.get("cf", {}).get("country")
-        if not country:
-            print(f"Primary API: no country for {host} ({ip})", file=sys.stderr)
-        return country or None
+        if data.get("status") == "success":
+            country = data.get("metadata", {}).get("country")
+            if country:
+                return country
+        print(f"Primary API: no country for {host} ({ip})", file=sys.stderr)
+        return None
     except Exception as e:
         print(f"Primary API error for {host} ({ip}): {e}", file=sys.stderr)
         return None
 
 
-async def fetch_from_fallback(
-    session: aiohttp.ClientSession,
-    ip: str,
-    host: str,
-) -> Optional[str]:
+async def fetch_from_fallback(session: aiohttp.ClientSession, ip: str, host: str) -> Optional[str]:
     url = f"{FALLBACK_API_BASE}/{ip}"
     try:
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             resp.raise_for_status()
             data = await resp.json()
-        if not data.get("success", True) is False and data.get("country_code"):
-            return data["country_code"]
+        country = data.get("country_code")
+        if country:
+            return country
         print(f"Fallback API: no country for {host} ({ip})", file=sys.stderr)
         return None
     except Exception as e:
@@ -88,7 +79,6 @@ async def get_country_code(
 ) -> str:
     if ip in cache:
         return cache[ip]
-
     async with semaphore:
         country = await fetch_from_primary(session, ip, host)
         if not country:
@@ -109,33 +99,23 @@ async def process_link(
     link = link.strip()
     if not link:
         return None
-
     host, base_link = extract_host_and_base_link(link)
     if not host or not base_link:
         return None
-
     ip = await resolve_host(host)
-    if not ip:
-        country = "xXx"
-    else:
-        country = await get_country_code(session, ip, host, cache, semaphore)
-
+    country = "xXx" if not ip else await get_country_code(session, ip, host, cache, semaphore)
     flag = get_flag_emoji(country)
-    new_name = f"{flag}{country}  ROSE—{index:02d}"
-    return f"{base_link}#{new_name}"
+    return f"{base_link}#{flag}{country}  ROSE—{index:02d}"
 
 
 async def rename_configs_async(config_list: List[str]) -> List[str]:
     cache: Dict[str, str] = {}
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
-
     async with aiohttp.ClientSession() as session:
-        tasks = [
+        results = await asyncio.gather(*[
             process_link(i, link, session, cache, semaphore)
             for i, link in enumerate(config_list, 1)
-        ]
-        results = await asyncio.gather(*tasks)
-
+        ])
     return [r for r in results if r]
 
 
