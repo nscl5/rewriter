@@ -25,12 +25,7 @@ jobs:
       - name: Install dependencies  
         run: |  
           python -m pip install --upgrade pip  
-          pip install geoip2  
-
-      - name: Download Offline GeoIP Database  
-        run: |  
-          mkdir -p assets  
-          curl -sS -L "https://raw.githubusercontent.com/cloudflare/speedtest/main/data/GeoLite2-Country.mmdb" -o assets/GeoLite2-Country.mmdb  
+          pip install aiohttp  
 
       - name: Run renaming script  
         run: python assets/rewrite5.py > renamed_configs.txt  
