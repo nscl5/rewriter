@@ -108,18 +108,40 @@ async def fetch_primary(session: aiohttp.ClientSession, ip: str) -> Optional[str
             f"{PRIMARY_API_BASE}/{ip}",
             timeout=aiohttp.ClientTimeout(total=10)
         ) as resp:
+
             if resp.status != 200:
+                text = await resp.text()
+                print(
+                    f"[PRIMARY] {ip} -> HTTP {resp.status} -> {text[:200]}",
+                    file=sys.stderr
+                )
                 return None
 
-            data = await resp.json()
+            try:
+                data = await resp.json()
+            except Exception as e:
+                text = await resp.text()
+                print(
+                    f"[PRIMARY] {ip} -> JSON ERROR: {e} -> {text[:200]}",
+                    file=sys.stderr
+                )
+                return None
 
             if data.get("status") == "success":
                 cc = data.get("metadata", {}).get("country")
                 if cc:
                     return cc.upper()
 
-    except Exception:
-        pass
+            print(
+                f"[PRIMARY] {ip} -> INVALID RESPONSE: {data}",
+                file=sys.stderr
+            )
+
+    except Exception as e:
+        print(
+            f"[PRIMARY] {ip} -> EXCEPTION: {type(e).__name__}: {e}",
+            file=sys.stderr
+        )
 
     return None
 
@@ -130,18 +152,40 @@ async def fetch_fallback(session: aiohttp.ClientSession, ip: str) -> Optional[st
             f"{FALLBACK_API_BASE}/{ip}",
             timeout=aiohttp.ClientTimeout(total=10)
         ) as resp:
+
             if resp.status != 200:
+                text = await resp.text()
+                print(
+                    f"[FALLBACK] {ip} -> HTTP {resp.status} -> {text[:200]}",
+                    file=sys.stderr
+                )
                 return None
 
-            data = await resp.json()
+            try:
+                data = await resp.json()
+            except Exception as e:
+                text = await resp.text()
+                print(
+                    f"[FALLBACK] {ip} -> JSON ERROR: {e} -> {text[:200]}",
+                    file=sys.stderr
+                )
+                return None
 
             if data.get("success") is True:
                 cc = data.get("country_code")
                 if cc:
                     return cc.upper()
 
-    except Exception:
-        pass
+            print(
+                f"[FALLBACK] {ip} -> INVALID RESPONSE: {data}",
+                file=sys.stderr
+            )
+
+    except Exception as e:
+        print(
+            f"[FALLBACK] {ip} -> EXCEPTION: {type(e).__name__}: {e}",
+            file=sys.stderr
+        )
 
     return None
 
