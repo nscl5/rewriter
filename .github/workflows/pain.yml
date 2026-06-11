@@ -30,7 +30,7 @@ jobs:
       - name: Download Offline GeoIP Database  
         run: |  
           mkdir -p assets  
-          curl -sS -L "https://github.com/P3TERX/GeoLite2-Country-csv/raw/main/GeoLite2-Country.mmdb" -o assets/GeoLite2-Country.mmdb  
+          curl -sS -L "https://raw.githubusercontent.com/cloudflare/speedtest/main/data/GeoLite2-Country.mmdb" -o assets/GeoLite2-Country.mmdb  
 
       - name: Run renaming script  
         run: python assets/rewrite5.py > renamed_configs.txt  
