@@ -1,9 +1,12 @@
-name: RE-WRITER SS Conf  
+name: RE-WRITER
 
 on:  
   push:  
     branches:  
       - main  
+    paths:
+      - 'conf.txt'
+      - 'assets/rewrite.py'
   workflow_dispatch:  
 
 permissions:  
@@ -28,7 +31,7 @@ jobs:
           pip install aiohttp  
 
       - name: Run renaming script  
-        run: python assets/rewrite5.py > renamed_configs.txt  
+        run: python assets/rewrite.py > renamed_configs.txt  
 
       - name: Upload renamed configs  
         uses: actions/upload-artifact@v4  
