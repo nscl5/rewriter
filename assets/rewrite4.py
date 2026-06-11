@@ -7,7 +7,8 @@ from typing import List, Dict, Optional
   
 PRIMARY_API_BASE = "https://who.victoriacross.ir/json"  
 FALLBACK_API_BASE = "https://ipwho.is"  
-MAX_CONCURRENT_REQUESTS = 20  
+THIRD_API_BASE = "https://ipapi.co"  # Added as a robust third layer 🤪
+MAX_CONCURRENT_REQUESTS = 10
 INPUT_FILE = "conf.txt"  
   
   
@@ -51,7 +52,10 @@ async def fetch_from_primary(session: aiohttp.ClientSession, ip: str, host: str)
                     country = data.get("metadata", {}).get("country")  
                     if country:  
                         return country  
-            print(f"[API ERROR] Primary API returned status {resp.status} or bad JSON for IP {ip} ({host})", file=sys.stderr)
+            elif resp.status == 429:
+                print(f"[RATE LIMIT] Primary API rate-limited for IP {ip}. Cooling down...", file=sys.stderr)
+                await asyncio.sleep(2)
+            print(f"[API ERROR] Primary API returned status {resp.status} for IP {ip} ({host})", file=sys.stderr)
             return None  
     except Exception as e:  
         print(f"[API TIMEOUT/ERROR] Primary API failed for IP {ip} ({host}): {e}", file=sys.stderr)  
@@ -68,10 +72,30 @@ async def fetch_from_fallback(session: aiohttp.ClientSession, ip: str, host: str
                     country = data.get("country_code")  
                     if country:  
                         return country  
-            print(f"[API ERROR] Fallback API returned status {resp.status} or bad JSON for IP {ip} ({host})", file=sys.stderr)
+            elif resp.status == 429:
+                print(f"[RATE LIMIT] Fallback API rate-limited for IP {ip}. Cooling down...", file=sys.stderr)
+                await asyncio.sleep(2)
+            print(f"[API ERROR] Fallback API returned status {resp.status} for IP {ip} ({host})", file=sys.stderr)
             return None  
     except Exception as e:  
         print(f"[API TIMEOUT/ERROR] Fallback API failed for IP {ip} ({host}): {e}", file=sys.stderr)  
+        return None  
+
+
+async def fetch_from_third_layer(session: aiohttp.ClientSession, ip: str, host: str) -> Optional[str]:  
+    url = f"{THIRD_API_BASE}/{ip}/json/"  
+    try:  
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:  
+            if resp.status == 200:
+                data = await resp.json()  
+                country = data.get("country")  
+                if country and "error" not in data:  
+                    return country  
+            print(f"[API ERROR] Third API returned status {resp.status} for IP {ip} ({host})", file=sys.stderr)
+            return None  
+    except Exception as e:  
+        print(f"[API TIMEOUT/ERROR] Third API failed for IP {ip} ({host}): {e}", file=sys.stderr)  
         return None  
   
   
@@ -89,7 +113,9 @@ async def get_country_code(
         if not country:  
             country = await fetch_from_fallback(session, ip, host)  
         if not country:  
-            print(f"[LOCATION FAILED] Both APIs failed to detect country for IP {ip} ({host}). Setting to UN.", file=sys.stderr)
+            country = await fetch_from_third_layer(session, ip, host)
+        if not country:  
+            print(f"[LOCATION FAILED] All APIs failed to detect country for IP {ip} ({host}). Setting to UN.", file=sys.stderr)
             country = "UN"  
         cache[ip] = country  
         return country  
@@ -108,12 +134,12 @@ async def process_link(
         
     host, base_link = extract_host_and_base_link(link)  
     if not host or not base_link:  
-        print(f"[CONFIG SKIPPED] Index {index:02d}: Link structure is invalid or scheme is missing.", file=sys.stderr)
+        print(f"[CONFIG SKIPPED] Index {index:02d}: Link structure is invalid.", file=sys.stderr)
         return f"{link.split('#')[0]}#🇺🇳UN  ROSE—{index:02d}"  
         
     ip = await resolve_host(host)  
     if not ip:  
-        print(f"[CONFIG UN] Index {index:02d}: Skipping API lookup because DNS resolution failed for '{host}'. Setting to UN.", file=sys.stderr)
+        print(f"[CONFIG UN] Index {index:02d}: DNS resolution failed for '{host}'. Setting to UN.", file=sys.stderr)
         country = "UN"  
     else:  
         country = await get_country_code(session, ip, host, cache, semaphore)  
@@ -131,23 +157,3 @@ async def rename_configs_async(config_list: List[str]) -> List[str]:
             for i, link in enumerate(config_list, 1)  
         ])  
     return [r for r in results if r]  
-  
-  
-def main():  
-    try:  
-        with open(INPUT_FILE, "r", encoding="utf-8") as f:  
-            configs = f.readlines()  
-        if not configs:  
-            print(f"Warning: {INPUT_FILE} is empty.", file=sys.stderr)  
-        for config in asyncio.run(rename_configs_async(configs)):  
-            print(config)  
-    except FileNotFoundError:  
-        print(f"Error: {INPUT_FILE} not found.", file=sys.stderr)  
-        sys.exit(1)  
-    except Exception as e:  
-        print(f"Unexpected error: {e}", file=sys.stderr)  
-        sys.exit(1)  
-  
-  
-if __name__ == "__main__":  
-    main()
