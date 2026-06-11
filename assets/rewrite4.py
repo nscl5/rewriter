@@ -5,8 +5,8 @@ import socket
 from urllib.parse import urlparse
 from typing import List, Dict, Optional  
   
-PRIMARY_API_BASE = "https://wilhffulfuhlhl.assessmentsandattachments.workers.dev/json"  
-MAX_CONCURRENT_REQUESTS = 20  
+PRIMARY_API_BASE = "https://freeipapi.com/api/json"  
+MAX_CONCURRENT_REQUESTS = 10  
 INPUT_FILE = "conf.txt"  
   
   
@@ -46,14 +46,13 @@ async def fetch_location(session: aiohttp.ClientSession, ip: str, host: str) -> 
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:  
             if resp.status == 200:
                 data = await resp.json()  
-                if data.get("status") == "success":  
-                    country = data.get("metadata", {}).get("country")  
-                    if country:  
-                        return country  
-            print(f"[API ERROR] Worker returned status {resp.status} or invalid payload for IP {ip} ({host})", file=sys.stderr)
+                country = data.get("countryCode")  
+                if country and country != "-":  
+                    return country  
+            print(f"[API ERROR] API returned status {resp.status} for IP {ip} ({host})", file=sys.stderr)
             return None  
     except Exception as e:  
-        print(f"[API TIMEOUT] Worker connection failed for IP {ip} ({host}): {e}", file=sys.stderr)  
+        print(f"[API TIMEOUT] Connection failed for IP {ip} ({host}): {e}", file=sys.stderr)  
         return None  
   
   
