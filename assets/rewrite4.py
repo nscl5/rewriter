@@ -2,13 +2,15 @@ import asyncio
 import aiohttp  
 import sys  
 import socket  
+import json
+import urllib.request
 from urllib.parse import urlparse
 from typing import List, Dict, Optional  
   
 PRIMARY_API_BASE = "https://who.victoriacross.ir/json"  
 FALLBACK_API_BASE = "https://ipwho.is"  
 THIRD_API_BASE = "https://ipapi.co"  # Added as a robust third layer 🤪
-MAX_CONCURRENT_REQUESTS = 10
+MAX_CONCURRENT_REQUESTS = 5  
 INPUT_FILE = "conf.txt"  
   
   
@@ -53,7 +55,6 @@ async def fetch_from_primary(session: aiohttp.ClientSession, ip: str, host: str)
                     if country:  
                         return country  
             elif resp.status == 429:
-                print(f"[RATE LIMIT] Primary API rate-limited for IP {ip}. Cooling down...", file=sys.stderr)
                 await asyncio.sleep(2)
             print(f"[API ERROR] Primary API returned status {resp.status} for IP {ip} ({host})", file=sys.stderr)
             return None  
@@ -73,7 +74,6 @@ async def fetch_from_fallback(session: aiohttp.ClientSession, ip: str, host: str
                     if country:  
                         return country  
             elif resp.status == 429:
-                print(f"[RATE LIMIT] Fallback API rate-limited for IP {ip}. Cooling down...", file=sys.stderr)
                 await asyncio.sleep(2)
             print(f"[API ERROR] Fallback API returned status {resp.status} for IP {ip} ({host})", file=sys.stderr)
             return None  
@@ -82,21 +82,25 @@ async def fetch_from_fallback(session: aiohttp.ClientSession, ip: str, host: str
         return None  
 
 
-async def fetch_from_third_layer(session: aiohttp.ClientSession, ip: str, host: str) -> Optional[str]:  
-    url = f"{THIRD_API_BASE}/{ip}/json/"  
-    try:  
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:  
-            if resp.status == 200:
-                data = await resp.json()  
-                country = data.get("country")  
-                if country and "error" not in data:  
-                    return country  
-            print(f"[API ERROR] Third API returned status {resp.status} for IP {ip} ({host})", file=sys.stderr)
-            return None  
-    except Exception as e:  
-        print(f"[API TIMEOUT/ERROR] Third API failed for IP {ip} ({host}): {e}", file=sys.stderr)  
-        return None  
+def fetch_from_third_layer_sync(ip: str) -> Optional[str]:
+    url = f"{THIRD_API_BASE}/{ip}/json/"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as response:
+            if response.status == 200:
+                res_body = response.read().decode('utf-8')
+                data = json.loads(res_body)
+                country = data.get("country")
+                if country and "error" not in data:
+                    return country
+    except Exception:
+        pass
+    return None
+
+
+async def fetch_from_third_layer(ip: str) -> Optional[str]:  
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, fetch_from_third_layer_sync, ip)
   
   
 async def get_country_code(  
@@ -113,7 +117,7 @@ async def get_country_code(
         if not country:  
             country = await fetch_from_fallback(session, ip, host)  
         if not country:  
-            country = await fetch_from_third_layer(session, ip, host)
+            country = await fetch_from_third_layer(ip)
         if not country:  
             print(f"[LOCATION FAILED] All APIs failed to detect country for IP {ip} ({host}). Setting to UN.", file=sys.stderr)
             country = "UN"  
@@ -157,3 +161,23 @@ async def rename_configs_async(config_list: List[str]) -> List[str]:
             for i, link in enumerate(config_list, 1)  
         ])  
     return [r for r in results if r]  
+  
+  
+def main():  
+    try:  
+        with open(INPUT_FILE, "r", encoding="utf-8") as f:  
+            configs = f.readlines()  
+        if not configs:  
+            print(f"Warning: {INPUT_FILE} is empty.", file=sys.stderr)  
+        for config in asyncio.run(rename_configs_async(configs)):  
+            print(config)  
+    except FileNotFoundError:  
+        print(f"Error: {INPUT_FILE} not found.", file=sys.stderr)  
+        sys.exit(1)  
+    except Exception as e:  
+        print(f"Unexpected error: {e}", file=sys.stderr)  
+        sys.exit(1)  
+  
+  
+if __name__ == "__main__":  
+    main()
