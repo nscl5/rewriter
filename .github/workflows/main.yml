@@ -28,7 +28,7 @@ jobs:
           pip install -r assets/requirements.txt
 
       - name: Run renaming script
-        run: python assets/rewrite.py > renamed_configs.txt
+        run: python assets/rewrite3.py > renamed_configs.txt
 
       - name: Upload renamed configs
         uses: actions/upload-artifact@v4
