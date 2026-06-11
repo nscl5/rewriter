@@ -6,15 +6,10 @@ import ipaddress
 from urllib.parse import urlparse
 from typing import List, Dict, Optional  
   
-PRIMARY_API_BASE = "https://ipapi.co"  
-MAX_CONCURRENT_REQUESTS = 3  
-  
-  
 def get_flag_emoji(country_code: str) -> str:  
     if not country_code or len(country_code) != 2 or country_code == "UN":  
         return "🇺🇳"  
     return "".join(chr(0x1F1E6 + ord(c) - ord('A')) for c in country_code.upper())  
-  
   
 def extract_host_and_base_link(link: str):  
     link = link.strip()  
@@ -30,7 +25,6 @@ def extract_host_and_base_link(link: str):
         print(f"[PARSE ERROR] Failed to parse link: {link[:50]}... -> {e}", file=sys.stderr)  
     return None, None  
   
-  
 async def resolve_host(host: str) -> Optional[str]:  
     try:
         ipaddress.ip_address(host)
@@ -45,9 +39,8 @@ async def resolve_host(host: str) -> Optional[str]:
         print(f"[DNS ERROR] Could not resolve host '{host}': {e}", file=sys.stderr)  
         return None  
   
-  
 async def fetch_location_with_retry(session: aiohttp.ClientSession, ip: str, host: str) -> Optional[str]:  
-    url = f"{PRIMARY_API_BASE}/{ip}/json/"  
+    url = f"https://ipapi.co/{ip}/json/"  
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) RE-WRITER/1.0"}
     
     for attempt in range(1, 4):
@@ -67,12 +60,11 @@ async def fetch_location_with_retry(session: aiohttp.ClientSession, ip: str, hos
                 
                 print(f"[API ERROR] Status {resp.status} for IP {ip} ({host})", file=sys.stderr)
                 return None  
-        except Exception as e:  
+        except Exception as e:
             print(f"[CONNECTION ERROR] Attempt {attempt} failed for IP {ip}: {e}", file=sys.stderr)
             await asyncio.sleep(2)
             
     return None  
-  
   
 async def get_country_code(  
     session: aiohttp.ClientSession,  
@@ -89,7 +81,6 @@ async def get_country_code(
             country = "UN"  
         cache[ip] = country  
         return country  
-  
   
 async def process_link(  
     index: int,  
@@ -116,10 +107,9 @@ async def process_link(
     flag = get_flag_emoji(country)  
     return f"{base_link}#{flag}{country}  ROSE—{index:02d}"  
   
-  
 async def rename_configs_async(config_list: List[str]) -> List[str]:  
     cache: Dict[str, str] = {}  
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)  
+    semaphore = asyncio.Semaphore(5)  
     async with aiohttp.ClientSession() as session:  
         results = await asyncio.gather(*[  
             process_link(i, link, session, cache, semaphore)  
@@ -127,22 +117,21 @@ async def rename_configs_async(config_list: List[str]) -> List[str]:
         ])  
     return [r for r in results if r]  
   
-  
 def main():  
+    input_file = "conf.txt"
     try:  
-        with open(INPUT_FILE, "r", encoding="utf-8") as f:  
+        with open(input_file, "r", encoding="utf-8") as f:  
             configs = f.readlines()  
         if not configs:  
-            print(f"Warning: {INPUT_FILE} is empty.", file=sys.stderr)  
+            print(f"Warning: {input_file} is empty.", file=sys.stderr)  
         for config in asyncio.run(rename_configs_async(configs)):  
             print(config)  
     except FileNotFoundError:  
-        print(f"Error: {INPUT_FILE} not found.", file=sys.stderr)  
+        print(f"Error: {input_file} not found.", file=sys.stderr)  
         sys.exit(1)  
     except Exception as e:  
         print(f"Unexpected error: {e}", file=sys.stderr)  
         sys.exit(1)  
-  
   
 if __name__ == "__main__":  
     main()
