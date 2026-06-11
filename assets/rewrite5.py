@@ -1,13 +1,13 @@
 import asyncio  
+import aiohttp  
 import sys  
 import socket  
-import os
-import geoip2.database
+import ipaddress
 from urllib.parse import urlparse
-from typing import List, Optional  
+from typing import List, Dict, Optional  
   
-INPUT_FILE = "conf.txt"  
-DB_PATH = "assets/GeoLite2-Country.mmdb"  
+PRIMARY_API_BASE = "https://ipapi.co"  
+MAX_CONCURRENT_REQUESTS = 3  
   
   
 def get_flag_emoji(country_code: str) -> str:  
@@ -32,6 +32,12 @@ def extract_host_and_base_link(link: str):
   
   
 async def resolve_host(host: str) -> Optional[str]:  
+    try:
+        ipaddress.ip_address(host)
+        return host
+    except ValueError:
+        pass
+
     loop = asyncio.get_running_loop()  
     try:  
         return await loop.run_in_executor(None, socket.gethostbyname, host)  
@@ -40,23 +46,57 @@ async def resolve_host(host: str) -> Optional[str]:
         return None  
   
   
-def lookup_geoip_offline(reader: geoip2.database.Reader, ip: str, host: str) -> str:
-    try:
-        response = reader.country(ip)
-        country = response.country.iso_code
-        if country:
-            return country
-    except geoip2.errors.AddressNotFoundError:
-        print(f"[NOT FOUND] IP {ip} ({host}) not found in offline database.", file=sys.stderr)
-    except Exception as e:
-        print(f"[DB ERROR] Offline lookup failed for IP {ip} ({host}): {e}", file=sys.stderr)
-    return "UN"
+async def fetch_location_with_retry(session: aiohttp.ClientSession, ip: str, host: str) -> Optional[str]:  
+    url = f"{PRIMARY_API_BASE}/{ip}/json/"  
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) RE-WRITER/1.0"}
+    
+    for attempt in range(1, 4):
+        try:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as resp:  
+                if resp.status == 200:
+                    data = await resp.json()  
+                    if "error" not in data:
+                        country = data.get("country")  
+                        if country and len(country) == 2:
+                            return country  
+                elif resp.status == 429:
+                    wait_time = attempt * 3
+                    print(f"[RATE LIMIT] 429 Hit for IP {ip}. Attempt {attempt}/3. Waiting {wait_time}s...", file=sys.stderr)
+                    await asyncio.sleep(wait_time)
+                    continue
+                
+                print(f"[API ERROR] Status {resp.status} for IP {ip} ({host})", file=sys.stderr)
+                return None  
+        except Exception as e:  
+            print(f"[CONNECTION ERROR] Attempt {attempt} failed for IP {ip}: {e}", file=sys.stderr)
+            await asyncio.sleep(2)
+            
+    return None  
+  
+  
+async def get_country_code(  
+    session: aiohttp.ClientSession,  
+    ip: str,  
+    host: str,  
+    cache: Dict[str, str],  
+    semaphore: asyncio.Semaphore,  
+) -> str:  
+    if ip in cache:  
+        return cache[ip]  
+    async with semaphore:  
+        country = await fetch_location_with_retry(session, ip, host)  
+        if not country:  
+            country = "UN"  
+        cache[ip] = country  
+        return country  
   
   
 async def process_link(  
     index: int,  
     link: str,  
-    reader: geoip2.database.Reader,  
+    session: aiohttp.ClientSession,  
+    cache: Dict[str, str],  
+    semaphore: asyncio.Semaphore,  
 ) -> Optional[str]:  
     link = link.strip()  
     if not link:  
@@ -71,20 +111,18 @@ async def process_link(
         print(f"[DNS FAILED] Index {index:02d}: Cannot resolve {host}. Setting to UN.", file=sys.stderr)
         country = "UN"  
     else:  
-        country = lookup_geoip_offline(reader, ip, host)  
+        country = await get_country_code(session, ip, host, cache, semaphore)  
         
     flag = get_flag_emoji(country)  
     return f"{base_link}#{flag}{country}  ROSE—{index:02d}"  
   
   
 async def rename_configs_async(config_list: List[str]) -> List[str]:  
-    if not os.path.exists(DB_PATH):
-        print(f"[CRITICAL ERROR] GeoIP Database not found at {DB_PATH}!", file=sys.stderr)
-        sys.exit(1)
-        
-    with geoip2.database.Reader(DB_PATH) as reader:
+    cache: Dict[str, str] = {}  
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)  
+    async with aiohttp.ClientSession() as session:  
         results = await asyncio.gather(*[  
-            process_link(i, link, reader)  
+            process_link(i, link, session, cache, semaphore)  
             for i, link in enumerate(config_list, 1)  
         ])  
     return [r for r in results if r]  
