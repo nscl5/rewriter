@@ -8,7 +8,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 PRIMARY_API_BASE = "https://who.victoriacross.ir/json"
 FALLBACK_API_BASE = "https://ipwho.is"
-MAX_CONCURRENT_REQUESTS = 20
+MAX_CONCURRENT_REQUESTS = 5
 INPUT_FILE = "conf.txt"
 
 TLD_FALLBACK = {
