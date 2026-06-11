@@ -43,12 +43,35 @@ async def resolve_host(host: str) -> Optional[str]:
 
 def check_local_rules(host: str, ip: str) -> Optional[str]:
     host_lower = host.lower()
-    if host_lower.endswith(".ir") or "dadnode" in host_lower or "samanehha" in host_lower or "bardiadev" in host_lower:
+    if host_lower.endswith(".ir") or any(kw in host_lower for kw in ["dadnode", "samanehha", "bardiadev", "havij", "ikco"]):
         return "IR"
-    if host_lower.endswith(".ru") or "team.ru" in host_lower or "videolinks.ru" in host_lower:
+    if host_lower.endswith(".ru") or any(kw in host_lower for kw in ["team.ru", "videolinks.ru", "moktana", "bystrivpn"]):
         return "RU"
-    if "cloudflare" in host_lower or "fastly" in host_lower or host_lower.endswith(".xyz"):
+    if "cloudflare" in host_lower or "fastly" in host_lower or host_lower.endswith(".xyz") or "freesocks" in host_lower:
         return "US"
+        
+    if ip:
+        try:
+            ip_obj = ipaddress.ip_address(ip)
+            if ip_obj in ipaddress.ip_network("104.16.0.0/12") or ip_obj in ipaddress.ip_network("172.64.0.0/13"):
+                return "US"
+            if ip_obj in ipaddress.ip_network("188.114.96.0/20"):
+                return "NL"
+        except Exception:
+            pass
+    return None
+
+async def fetch_location_with_retry(session: aiohttp.ClientSession, ip: str, host: str) -> Optional[str]:
+    url = f"https://freeipapi.com/api/json/{ip}"
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                country = data.get("countryCode")
+                if country and country != "-":
+                    return country
+    except Exception:
+        pass
     return None
 
 async def fetch_location_backup(session: aiohttp.ClientSession, ip: str, host: str) -> Optional[str]:  
@@ -62,8 +85,8 @@ async def fetch_location_backup(session: aiohttp.ClientSession, ip: str, host: s
                     if country and len(country) == 2:
                         return country  
             elif resp.status == 429:
-                await asyncio.sleep(2)
-            print(f"[API ERROR] Status {resp.status} for IP {ip} ({host})", file=sys.stderr)
+                print(f"[COOL DOWN] Backup API 429 hit for {ip}. Sleeping 3s...", file=sys.stderr)
+                await asyncio.sleep(3)
             return None  
     except Exception as e:
         print(f"[CONNECTION ERROR] Failed for IP {ip}: {e}", file=sys.stderr)
@@ -92,19 +115,6 @@ async def get_country_code(
             country = "UN"  
         cache[ip] = country  
         return country  
-
-async def fetch_location_with_retry(session: aiohttp.ClientSession, ip: str, host: str) -> Optional[str]:
-    url = f"https://freeipapi.com/api/json/{ip}"
-    try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                country = data.get("countryCode")
-                if country and country != "-":
-                    return country
-    except Exception:
-        pass
-    return None
   
 async def process_link(  
     index: int,  
@@ -123,8 +133,7 @@ async def process_link(
         
     ip = await resolve_host(host)  
     if not ip:  
-        print(f"[DNS FAILED] Index {index:02d}: Cannot resolve {host}. Setting to UN.", file=sys.stderr)
-        country = "UN"  
+        country = check_local_rules(host, "") or "UN"
     else:  
         country = await get_country_code(session, ip, host, cache, semaphore)  
         
@@ -133,7 +142,7 @@ async def process_link(
   
 async def rename_configs_async(config_list: List[str]) -> List[str]:  
     cache: Dict[str, str] = {}  
-    semaphore = asyncio.Semaphore(3)  
+    semaphore = asyncio.Semaphore(2)  
     async with aiohttp.ClientSession() as session:  
         results = await asyncio.gather(*[  
             process_link(i, link, session, cache, semaphore)  
