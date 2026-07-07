@@ -27,18 +27,21 @@ def extract_host_and_base_link(link: str):
         print(f"[PARSE ERROR] Failed to parse link: {link[:50]}... -> {e}", file=sys.stderr)  
     return None, None  
   
-async def resolve_host(host: str) -> Optional[str]:  
+async def resolve_host(host: str) -> Optional[str]:
     try:
         ipaddress.ip_address(host)
         return host
     except ValueError:
         pass
 
-    loop = asyncio.get_running_loop()  
-    try:  
-        return await loop.run_in_executor(None, socket.gethostbyname, host)  
-    except socket.gaierror as e:  
-        print(f"[DNS ERROR] Could not resolve host '{host}': {e}", file=sys.stderr)  
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(None, socket.gethostbyname, host)
+    except socket.gaierror as e:
+        print(f"[DNS ERROR] Could not resolve host '{host}': {e}", file=sys.stderr)
+        return None
+    except UnicodeError as e:
+        print(f"[DNS ERROR] Invalid hostname '{host[:60]}...': {e}", file=sys.stderr)
         return None  
 
 def check_local_rules(host: str, ip: str) -> Optional[str]:
@@ -116,29 +119,33 @@ async def get_country_code(
         cache[ip] = country  
         return country  
   
-async def process_link(  
-    index: int,  
-    link: str,  
-    session: aiohttp.ClientSession,  
-    cache: Dict[str, str],  
-    semaphore: asyncio.Semaphore,  
-) -> Optional[str]:  
-    link = link.strip()  
-    if not link:  
-        return None  
-        
-    host, base_link = extract_host_and_base_link(link)  
-    if not host or not base_link:  
-        return f"{link.split('#')[0]}#🇺🇳UN  ROSE—{index:02d}"  
-        
-    ip = await resolve_host(host)  
-    if not ip:  
-        country = check_local_rules(host, "") or "UN"
-    else:  
-        country = await get_country_code(session, ip, host, cache, semaphore)  
-        
-    flag = get_flag_emoji(country)  
-    return f"{base_link}#{flag}{country}  ROSE—{index:02d}"  
+async def process_link(
+    index: int,
+    link: str,
+    session: aiohttp.ClientSession,
+    cache: Dict[str, str],
+    semaphore: asyncio.Semaphore,
+) -> Optional[str]:
+    link = link.strip()
+    if not link:
+        return None
+
+    host, base_link = extract_host_and_base_link(link)
+    if not host or not base_link:
+        return f"{link.split('#')[0]}#🇺🇳UN  ROSE—{index:02d}"
+
+    try:
+        ip = await resolve_host(host)
+        if not ip:
+            country = check_local_rules(host, "") or "UN"
+        else:
+            country = await get_country_code(session, ip, host, cache, semaphore)
+    except Exception as e:
+        print(f"[LINK ERROR] index {index}, host '{host[:60]}': {e}", file=sys.stderr)
+        country = "UN"
+
+    flag = get_flag_emoji(country)
+    return f"{base_link}#{flag}{country}  ROSE—{index:02d}"
   
 async def rename_configs_async(config_list: List[str]) -> List[str]:  
     cache: Dict[str, str] = {}  
