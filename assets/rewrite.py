@@ -29,6 +29,10 @@ def extract_host_and_base_link(link: str):
         print(f"[PARSE ERROR] Failed to parse link: {link[:50]}... -> {e}", file=sys.stderr)
     return None, None
 
+def has_allowed_scheme(link: str) -> bool:
+    allowed = ("ss://", "hy2://", "hysteria://", "hysteria2://", "tuic://")
+    return link.strip().startswith(allowed)
+
 def is_ip_address(host: str) -> bool:
     try:
         ipaddress.ip_address(host)
@@ -146,7 +150,7 @@ async def process_link(
 
     host, base_link = extract_host_and_base_link(link)
     if not host or not base_link:
-        return f"{link.split('#')[0]}#🇺🇳UN  ROSE—{index:02d}"
+        return f"{link.split('#')[0]}#🇺🇳UN  Dìa—{index:02d}"
 
     try:
         ip = await resolve_host(host)
@@ -156,15 +160,16 @@ async def process_link(
         country = "UN"
 
     flag = get_flag_emoji(country)
-    return f"{base_link}#{flag}{country}  ROSE—{index:02d}"
+    return f"{base_link}#{flag}{country}  Dìa—{index:02d}"
 
 async def rename_configs_async(config_list: List[str]) -> List[str]:
+    filtered = [link for link in config_list if has_allowed_scheme(link)]
     cache: Dict[str, str] = {}
     semaphore = asyncio.Semaphore(3)
     async with aiohttp.ClientSession() as session:
         results = await asyncio.gather(*[
             process_link(i, link, session, cache, semaphore)
-            for i, link in enumerate(config_list, 1)
+            for i, link in enumerate(filtered, 1)
         ])
     return [r for r in results if r]
 
