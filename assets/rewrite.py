@@ -150,7 +150,7 @@ async def process_link(
 
     host, base_link = extract_host_and_base_link(link)
     if not host or not base_link:
-        return f"{link.split('#')[0]}#🇺🇳UN  Dìa—{index:02d}"
+        return f"{link.split('#')[0]}#🇺🇳 Rose—{index:02d}"
 
     try:
         ip = await resolve_host(host)
@@ -160,7 +160,7 @@ async def process_link(
         country = "UN"
 
     flag = get_flag_emoji(country)
-    return f"{base_link}#{flag}{country}  Dìa—{index:02d}"
+    return f"{base_link}#{flag} Rose—{index:02d}"
 
 async def rename_configs_async(config_list: List[str]) -> List[str]:
     filtered = [link for link in config_list if has_allowed_scheme(link)]
